@@ -9,7 +9,7 @@ public enum Element: Sendable, Equatable {
 
 /// The Morse table: letters, digits, punctuation and the common prosigns.
 public enum MorseCode {
-    /// Prosigns, shown with an overline (A̅R̅) and typed as `<AR>` in practice text.
+    /// Prosigns, shown with an overline (A̅R̅).
     public static let prosigns: [String: String] = [
         "AR": ".-.-.", "SK": "...-.-", "BT": "-...-", "KN": "-.--.", "AS": ".-...",
     ]
@@ -44,35 +44,4 @@ public enum MorseCode {
 
     /// The text for a code, or nil when it isn't in the table.
     public static func decode(_ code: String) -> String? { decodeTable[code] }
-
-    /// Splits practice text into tokens: a code string per character or `<prosign>`, and
-    /// `nil` for a word break. Unknown characters are skipped.
-    public static func tokens(for text: String) -> [String?] {
-        var result: [String?] = []
-        let chars = Array(text.uppercased())
-        var i = 0
-        func addWordBreak() {
-            if let last = result.last, last != nil { result.append(nil) }
-        }
-        while i < chars.count {
-            let c = chars[i]
-            if c.isWhitespace {
-                addWordBreak()
-                i += 1
-                continue
-            }
-            if c == "<", let close = chars[(i + 1)...].firstIndex(of: ">") {
-                let name = String(chars[(i + 1)..<close])
-                if let code = prosigns[name] {
-                    result.append(code)
-                    i = close + 1
-                    continue
-                }
-            }
-            if let code = characters[c] { result.append(code) }
-            i += 1
-        }
-        while result.last == .some(nil) { result.removeLast() }
-        return result
-    }
 }

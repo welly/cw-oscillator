@@ -37,11 +37,11 @@ public struct Keyer: Sendable {
     public struct Settings: Equatable, Sendable {
         public var mode: KeyerMode
         public var timing: MorseTiming
-        /// Holds a new character back until a full letter gap has passed (at the Farnsworth
-        /// spacing when that's on), once the operator has paused longer than an element gap.
+        /// Holds a new character back until a full letter gap has passed, once the operator
+        /// has paused longer than an element gap.
         public var autospace: Bool
 
-        public init(mode: KeyerMode = .iambicB, timing: MorseTiming = MorseTiming(characterWPM: 20),
+        public init(mode: KeyerMode = .iambicB, timing: MorseTiming = MorseTiming(wpm: 20),
                     autospace: Bool = false) {
             self.mode = mode
             self.timing = timing

@@ -4,7 +4,7 @@ import Testing
 
 /// 1 kHz sample rate at 12 WPM: one unit is exactly 100 samples.
 private let rate = 1000.0
-private let twelve = MorseTiming(characterWPM: 12)
+private let twelve = MorseTiming(wpm: 12)
 
 /// Runs the keyer over a paddle script of (dit, dah, samples) and returns the elements it sent.
 private func run(_ mode: KeyerMode, timing: MorseTiming = twelve, autospace: Bool = false,
@@ -23,24 +23,12 @@ private func symbols(_ marks: [Mark]) -> String { String(marks.compactMap { $0.e
 
 @Suite struct TimingTests {
     @Test func parisUnit() {
-        #expect(abs(MorseTiming(characterWPM: 20).unit - 0.06) < 1e-12)
-        #expect(MorseTiming(characterWPM: 20).letterGap == 3 * 0.06)
+        let t = MorseTiming(wpm: 20)
+        #expect(abs(t.unit - 0.06) < 1e-12)
+        #expect(t.letterGap == 3 * t.unit)
+        #expect(t.wordGap == 7 * t.unit)
     }
 
-    @Test func farnsworthStretchesOnlyTheGaps() {
-        let t = MorseTiming(characterWPM: 18, effectiveWPM: 10)
-        #expect(t.isFarnsworth)
-        #expect(t.dit == 1.2 / 18)
-        // PARIS takes 60 / 10 = 6 s: 31 character units plus 19 spacing units.
-        let paris = 31 * t.unit + 19 * t.spacingUnit
-        #expect(abs(paris - 6.0) < 1e-9)
-    }
-
-    @Test func effectiveFasterThanCharacterIsIgnored() {
-        let t = MorseTiming(characterWPM: 15, effectiveWPM: 25)
-        #expect(!t.isFarnsworth)
-        #expect(t.spacingUnit == t.unit)
-    }
 }
 
 @Suite struct KeyerTests {
@@ -91,14 +79,6 @@ private func symbols(_ marks: [Mark]) -> String { String(marks.compactMap { $0.e
         let spaced = run(.iambicA, autospace: true, script)
         #expect(spaced[1].start - spaced[0].end == 300)
     }
-
-    @Test func autospaceUsesFarnsworthGap() {
-        let timing = MorseTiming(characterWPM: 12, effectiveWPM: 6)
-        let letterGap = Int((timing.letterGap * rate).rounded())
-        let script: [(Bool, Bool, Int)] = [(true, false, 50), (false, false, 300), (true, false, 50)]
-        let marks = run(.iambicA, timing: timing, autospace: true, script, tail: 2000)
-        #expect(marks[1].start - marks[0].end == letterGap)
-    }
 }
 
 @Suite struct DecoderTests {
@@ -126,6 +106,28 @@ private func symbols(_ marks: [Mark]) -> String { String(marks.compactMap { $0.e
         #expect(text == "AN E ")
     }
 
+    @Test func gapsBetweenCharactersAreMeasured() {
+        var decoder = Decoder(sampleRate: rate, timing: twelve)
+        // E, a 3.5-unit gap, T, a 5.5-unit gap, E, then a 20-unit pause and T.
+        let marks = [Mark(start: 0, end: 100, element: .dit), Mark(start: 450, end: 750, element: .dah),
+                     Mark(start: 1300, end: 1400, element: .dit), Mark(start: 3400, end: 3700, element: .dah)]
+        var gaps: [CharacterGap?] = []
+        for mark in marks {
+            decoder.add(mark)
+            decoder.update(now: mark.end + 1000)
+            gaps.append(decoder.lastGap)
+        }
+        #expect(gaps[0] == nil)
+        #expect(gaps[1]?.before == "E" && gaps[1]?.after == "T")
+        #expect(abs((gaps[1]?.units ?? 0) - 3.5) < 1e-9)
+        #expect(gaps[1]?.kind == .letter)
+        #expect(gaps[2]?.before == "T" && gaps[2]?.after == "E")
+        #expect(abs((gaps[2]?.units ?? 0) - 5.5) < 1e-9)
+        #expect(gaps[2]?.kind == .word)
+        #expect(gaps[3] == gaps[2]) // a long pause isn't counted
+        #expect(decoder.text == "E T E T ")
+    }
+
     @Test func straightKeyByLength() {
         let text = decode([(true, false, 300), (false, false, 100), (true, false, 100)], mode: .straight)
         #expect(text == "N ")
@@ -134,20 +136,5 @@ private func symbols(_ marks: [Mark]) -> String { String(marks.compactMap { $0.e
     @Test func prosignsAreOverlined() {
         #expect(MorseCode.decode(".-.-.") == "A\u{0305}R\u{0305}")
         #expect(MorseCode.decode("-...-") == "B\u{0305}T\u{0305}")
-    }
-}
-
-@Suite struct TextKeyingTests {
-    @Test func tokensHandleProsignsAndSpaces() {
-        let tokens = MorseCode.tokens(for: "e  t <ar>")
-        #expect(tokens == [".", nil, "-", nil, ".-.-."])
-    }
-
-    @Test func farnsworthGapsInPlayback() {
-        let timing = MorseTiming(characterWPM: 12, effectiveWPM: 6)
-        let segments = TextKeying.segments(for: "EE", timing: timing, sampleRate: rate)
-        let gap = Int((timing.letterGap * rate).rounded())
-        #expect(segments.map(\.1) == [100, 100, gap, 100, 50])
-        #expect(segments.map(\.0) == [false, true, false, true, false])
     }
 }

@@ -1,5 +1,5 @@
-// Renders the CW Oscillator app icon: a keyed sine-wave burst (a dit and a dah) over a lit
-// key lamp, on a dark teal tile. Writes Resources/AppIcon.icns.
+// Renders the CW Oscillator app icon: "CW" in Morse (C = dah dit dah dit, W = dit dah dah)
+// as glowing marks on a dark teal tile. Writes Resources/AppIcon.icns.
 // Usage: swift scripts/make-icon.swift              (from the repository root)
 //        swift scripts/make-icon.swift preview.png  (also writes a 1024 px preview)
 import AppKit
@@ -20,37 +20,30 @@ struct AppIcon: View {
                 .fill(RadialGradient(colors: [glow.opacity(0.55), .clear], center: .center,
                                      startRadius: 0, endRadius: 300))
                 .frame(width: 600, height: 600)
-            KeyedWave()
-                .stroke(glow, style: StrokeStyle(lineWidth: 13, lineCap: .round, lineJoin: .round))
-                .frame(width: 640, height: 300)
-                .shadow(color: glow.opacity(0.8), radius: 18)
+            VStack(alignment: .leading, spacing: 64) {
+                MorseRow(code: "-.-.")
+                MorseRow(code: ".--")
+            }
+            .shadow(color: glow.opacity(0.8), radius: 18)
         }
         .frame(width: 1024, height: 1024)
     }
 }
 
-/// A flat line with two bursts of sine wave: a short one (dit) and a long one (dah).
-struct KeyedWave: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let mid = rect.midY
-        let amplitude = rect.height / 2
-        // Bursts as fractions of the width: dit then dah, one unit gap between.
-        let bursts: [ClosedRange<Double>] = [0.12...0.30, 0.42...0.88]
-        let cycleWidth = 0.04
-        let steps = 900
-        for i in 0...steps {
-            let t = Double(i) / Double(steps)
-            var y = 0.0
-            if let burst = bursts.first(where: { $0.contains(t) }) {
-                let local = (t - burst.lowerBound) / (burst.upperBound - burst.lowerBound)
-                let ramp = sin(.pi / 2 * min(1, local * 5, (1 - local) * 5)) // raised-cosine keying
-                y = sin(2 * .pi * (t - burst.lowerBound) / cycleWidth) * ramp * ramp
+/// One character in Morse: dits and dahs as capsules, one dit-width apart.
+struct MorseRow: View {
+    let code: String
+    private let dit: CGFloat = 52
+    private let height: CGFloat = 52
+
+    var body: some View {
+        HStack(spacing: dit) {
+            ForEach(Array(code.enumerated()), id: \.offset) { _, symbol in
+                Capsule()
+                    .fill(glow)
+                    .frame(width: symbol == "-" ? dit * 3 : dit, height: height)
             }
-            let point = CGPoint(x: rect.minX + t * rect.width, y: mid - y * amplitude)
-            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
-        return path
     }
 }
 

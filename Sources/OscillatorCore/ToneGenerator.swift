@@ -43,28 +43,3 @@ public struct ToneGenerator: Sendable {
         return Float(value)
     }
 }
-
-/// Key-down/key-up periods for practice text, at the character speed with Farnsworth gaps.
-public enum TextKeying {
-    /// (key down?, length in samples) segments. Starts with a short silence.
-    public static func segments(for text: String, timing: MorseTiming, sampleRate: Double) -> [(Bool, Int)] {
-        func n(_ seconds: Double) -> Int { max(1, Int((seconds * sampleRate).rounded())) }
-        var result: [(Bool, Int)] = [(false, n(0.1))]
-        var previousWasChar = false
-        for token in MorseCode.tokens(for: text) {
-            guard let code = token else {
-                result.append((false, n(timing.wordGap)))
-                previousWasChar = false
-                continue
-            }
-            if previousWasChar { result.append((false, n(timing.letterGap))) }
-            for (i, symbol) in code.enumerated() {
-                if i > 0 { result.append((false, n(timing.elementGap))) }
-                result.append((true, n(symbol == "." ? timing.dit : timing.dah)))
-            }
-            previousWasChar = true
-        }
-        result.append((false, n(0.05)))
-        return result
-    }
-}

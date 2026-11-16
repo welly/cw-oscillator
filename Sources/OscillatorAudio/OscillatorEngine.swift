@@ -19,7 +19,6 @@ public final class OscillatorEngine: @unchecked Sendable {
     public struct Status: Sendable {
         public var clock = 0
         public var keyDown = false
-        public var isPlaying = false
     }
 
     private struct Shared {
@@ -28,8 +27,6 @@ public final class OscillatorEngine: @unchecked Sendable {
         var settings = Settings()
         var marks: [Mark] = []
         var status = Status()
-        var playbackRequest: [(Bool, Int)]?
-        var stopPlayback = false
         var resetKeyer = false
     }
 
@@ -37,9 +34,6 @@ public final class OscillatorEngine: @unchecked Sendable {
     private final class RenderState {
         var keyer: Keyer
         var tone: ToneGenerator
-        var playback: [(Bool, Int)] = []
-        var playbackIndex = 0
-        var playbackRemaining = 0
 
         init(sampleRate: Double, settings: Settings) {
             keyer = Keyer(sampleRate: sampleRate, settings: settings.keyer)
@@ -99,27 +93,17 @@ public final class OscillatorEngine: @unchecked Sendable {
             }
             let frames = Int(frameCount)
 
-            // One lock per buffer: read the paddles and settings, take any playback request.
-            let input = shared.withLock { s -> (Bool, Bool, Settings, [(Bool, Int)]?, Bool, Bool) in
-                let request = s.playbackRequest
-                s.playbackRequest = nil
-                let stop = s.stopPlayback, reset = s.resetKeyer
-                s.stopPlayback = false
+            // One lock per buffer: read the paddles and settings.
+            let input = shared.withLock { s -> (Bool, Bool, Settings, Bool) in
+                let reset = s.resetKeyer
                 s.resetKeyer = false
-                return (s.dit, s.dah, s.settings, request, stop, reset)
+                return (s.dit, s.dah, s.settings, reset)
             }
-            let (dit, dah, settings, request, stop, reset) = input
+            let (dit, dah, settings, reset) = input
             render.keyer.settings = settings.keyer
             render.tone.frequency = settings.frequency
             render.tone.volume = settings.volume
             if reset { render.keyer.reset() }
-            if let request {
-                render.playback = request
-                render.playbackIndex = 0
-                render.playbackRemaining = request.first?.1 ?? 0
-            }
-            // Touching the paddles (or Stop) cancels practice-text playback.
-            if stop || dit || dah { render.playback = [] }
 
             var keyDown = false
             var newMarks: [Mark] = []
@@ -127,26 +111,13 @@ public final class OscillatorEngine: @unchecked Sendable {
                 let out = render.keyer.tick(dit: dit, dah: dah)
                 keyDown = out.keyDown
                 if let mark = out.mark { newMarks.append(mark) }
-                if !keyDown, render.playbackIndex < render.playback.count {
-                    keyDown = render.playback[render.playbackIndex].0
-                    render.playbackRemaining -= 1
-                    if render.playbackRemaining <= 0 {
-                        render.playbackIndex += 1
-                        if render.playbackIndex < render.playback.count {
-                            render.playbackRemaining = render.playback[render.playbackIndex].1
-                        } else {
-                            render.playback = []
-                        }
-                    }
-                }
                 data[i] = render.tone.next(keyDown: keyDown)
             }
             for buffer in buffers.dropFirst() {
                 if let other = buffer.mData { memcpy(other, data, frames * MemoryLayout<Float>.size) }
             }
 
-            let status = Status(clock: render.keyer.clock, keyDown: keyDown,
-                                isPlaying: render.playbackIndex < render.playback.count)
+            let status = Status(clock: render.keyer.clock, keyDown: keyDown)
             let finished = newMarks
             shared.withLock { s in
                 s.marks.append(contentsOf: finished)
@@ -181,19 +152,6 @@ public final class OscillatorEngine: @unchecked Sendable {
             $0.dit = false
             $0.dah = false
             $0.resetKeyer = true
-        }
-    }
-
-    public func play(_ text: String) {
-        let timing = shared.withLock { $0.settings.keyer.timing }
-        let segments = TextKeying.segments(for: text, timing: timing, sampleRate: sampleRate)
-        shared.withLock { $0.playbackRequest = segments }
-    }
-
-    public func stopPlayback() {
-        shared.withLock {
-            $0.playbackRequest = nil
-            $0.stopPlayback = true
         }
     }
 

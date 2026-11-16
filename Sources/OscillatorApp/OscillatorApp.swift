@@ -10,11 +10,11 @@ struct OscillatorApp: App {
         Window("CW Oscillator", id: "main") {
             ContentView()
                 .environment(model)
-                .frame(minWidth: 460, minHeight: 620)
+                .frame(width: 520, height: 655)
                 .onAppear { model.start() }
         }
-        .defaultSize(width: 520, height: 720)
-        .windowResizability(.contentMinSize)
+        // Fixed size: the window can't be resized or zoomed.
+        .windowResizability(.contentSize)
     }
 }
 

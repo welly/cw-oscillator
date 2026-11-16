@@ -11,26 +11,23 @@ final class OscillatorModel {
 
     var frequency: Double { didSet { save() } }
     var volume: Double { didSet { save() } }
-    var wpm: Double { didSet { if effectiveWPM > wpm { effectiveWPM = wpm }; save() } }
-    var farnsworth: Bool { didSet { save() } }
-    var effectiveWPM: Double { didSet { save() } }
+    var wpm: Double { didSet { save() } }
     var mode: KeyerMode { didSet { save() } }
     var reversePaddles: Bool { didSet { save() } }
     var autospace: Bool { didSet { save() } }
-    var practiceText: String { didSet { defaults.set(practiceText, forKey: "practiceText") } }
 
     // MARK: Live state
 
     private(set) var ditPressed = false
     private(set) var dahPressed = false
     private(set) var keyDown = false
-    private(set) var isPlaying = false
     private(set) var copiedText = ""
+    private(set) var lastGap: CharacterGap?
     private(set) var pendingCode = ""
     var audioError: String?
 
     var timing: MorseTiming {
-        MorseTiming(characterWPM: wpm, effectiveWPM: farnsworth ? min(effectiveWPM, wpm) : nil)
+        MorseTiming(wpm: wpm)
     }
 
     private let defaults = UserDefaults.standard
@@ -42,20 +39,17 @@ final class OscillatorModel {
 
     init() {
         defaults.register(defaults: [
-            "frequency": 600.0, "volume": 0.5, "wpm": 20.0, "farnsworth": false,
-            "effectiveWPM": 10.0, "mode": KeyerMode.iambicB.rawValue, "reversePaddles": false,
-            "autospace": false, "practiceText": "CQ CQ DE G3AJM G3AJM K",
+            "frequency": 600.0, "volume": 0.5, "wpm": 20.0,
+            "mode": KeyerMode.iambicB.rawValue, "reversePaddles": false,
+            "autospace": false,
         ])
         frequency = defaults.double(forKey: "frequency")
         volume = defaults.double(forKey: "volume")
         wpm = defaults.double(forKey: "wpm")
-        farnsworth = defaults.bool(forKey: "farnsworth")
-        effectiveWPM = defaults.double(forKey: "effectiveWPM")
         mode = KeyerMode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .iambicB
         reversePaddles = defaults.bool(forKey: "reversePaddles")
         autospace = defaults.bool(forKey: "autospace")
-        practiceText = defaults.string(forKey: "practiceText") ?? ""
-        decoder = Decoder(sampleRate: 48_000, timing: MorseTiming(characterWPM: 20))
+        decoder = Decoder(sampleRate: 48_000, timing: MorseTiming(wpm: 20))
     }
 
     func start() {
@@ -84,12 +78,10 @@ final class OscillatorModel {
         self.timer = timer
     }
 
-    func play() { engine.play(practiceText) }
-    func stopPlaying() { engine.stopPlayback() }
-
     func clearCopy() {
         decoder.clear()
         copiedText = ""
+        lastGap = nil
         pendingCode = ""
     }
 
@@ -114,8 +106,8 @@ final class OscillatorModel {
         for mark in marks { decoder.add(mark) }
         decoder.update(now: status.clock, keyDown: status.keyDown)
         if keyDown != status.keyDown { keyDown = status.keyDown }
-        if isPlaying != status.isPlaying { isPlaying = status.isPlaying }
         if copiedText != decoder.text { copiedText = decoder.text }
+        if lastGap != decoder.lastGap { lastGap = decoder.lastGap }
         if pendingCode != decoder.pending { pendingCode = decoder.pending }
     }
 
@@ -123,8 +115,6 @@ final class OscillatorModel {
         defaults.set(frequency, forKey: "frequency")
         defaults.set(volume, forKey: "volume")
         defaults.set(wpm, forKey: "wpm")
-        defaults.set(farnsworth, forKey: "farnsworth")
-        defaults.set(effectiveWPM, forKey: "effectiveWPM")
         defaults.set(mode.rawValue, forKey: "mode")
         defaults.set(reversePaddles, forKey: "reversePaddles")
         defaults.set(autospace, forKey: "autospace")
