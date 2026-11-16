@@ -1,4 +1,4 @@
-// Renders the CW Oscillator app icon: "CW" in Morse (C = dah dit dah dit, W = dit dah dah)
+// Renders the CW Training Oscillator app icon: "CW" in Morse (C = dah dit dah dit, W = dit dah dah)
 // as glowing marks on a dark teal tile. Writes Resources/AppIcon.icns.
 // Usage: swift scripts/make-icon.swift              (from the repository root)
 //        swift scripts/make-icon.swift preview.png  (also writes a 1024 px preview)

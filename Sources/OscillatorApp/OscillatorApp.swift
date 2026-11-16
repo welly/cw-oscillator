@@ -7,14 +7,52 @@ struct OscillatorApp: App {
     @State private var model = OscillatorModel()
 
     var body: some Scene {
-        Window("CW Oscillator", id: "main") {
+        Window("CW Training Oscillator", id: "main") {
             ContentView()
                 .environment(model)
-                .frame(width: 520, height: 655)
+                .frame(minWidth: ContentView.minimumSize.width, minHeight: ContentView.minimumSize.height)
                 .onAppear { model.start() }
         }
-        // Fixed size: the window can't be resized or zoomed.
+        .defaultSize(ContentView.minimumSize)
+        // Resizable, down to the smallest size the layout fits.
+        .windowResizability(.contentMinSize)
+        .commands { AppCommands() }
+
+        Window("CW Training Oscillator Help", id: "help") {
+            HelpView()
+                .environment(model)
+                .frame(width: 480, height: 560)
+        }
         .windowResizability(.contentSize)
+        // Opened from the Help menu, so not listed in the Window menu as well.
+        .commandsRemoved()
+
+        Window("Statistics", id: "stats") {
+            StatisticsView()
+                .environment(model)
+                .frame(minWidth: 480, idealWidth: 520, minHeight: 420, idealHeight: 640)
+        }
+        .defaultSize(width: 520, height: 640)
+        .windowResizability(.contentMinSize)
+        // SwiftUI lists the window in the Window menu; this gives that item ⌘I.
+        .keyboardShortcut("i", modifiers: .command)
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
+    }
+}
+
+/// Help ▸ CW Training Oscillator Help.
+private struct AppCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("CW Training Oscillator Help") { openWindow(id: "help") }
+                .keyboardShortcut("?", modifiers: .command)
+        }
     }
 }
 

@@ -3,72 +3,158 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(OscillatorModel.self) private var model
+    @State private var showingHelp = false
+    @Environment(\.openWindow) private var openWindow
+    /// Height beyond the minimum, given to the copy box.
+    @State private var extraHeight: CGFloat = 0
+
+    /// The smallest size the layout fits; the window starts at this size.
+    static let minimumSize = CGSize(width: 560, height: 500)
 
     var body: some View {
         @Bindable var model = model
-        Form {
-            Section {
-                CopyView()
-                GapReadout(gap: model.lastGap)
-            } header: {
-                HStack {
-                    Text("Copy")
-                    Spacer()
-                    Button("Clear") { model.clearCopy() }
-                        .buttonStyle(.borderless)
+        VStack(spacing: 0) {
+            Form {
+                if model.sendingMode == .free {
+                    Section {
+                        CopyView(height: 196 + extraHeight, placeholder: "Send anything: you'll hear it and see it copied here.")
+                    } header: {
+                        copyHeader
+                    }
+                    timingSection
+                } else {
+                    practiceSections
                 }
             }
-            Section {
-                KeyPanel()
-                    .padding(.vertical, 6)
+            .formStyle(.grouped)
+            .scrollDisabled(true)
+
+            Divider()
+            HStack(spacing: 14) {
+                Stepper(value: $model.wpm, in: 5...60, step: 1) {
+                    Text(model.speedLabel).monospacedDigit()
+                }
+                .help(model.farnsworth ? "Character speed (effective speed is in Settings)" : "Keyer speed")
+                Text(model.mode.label)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    openWindow(id: "stats")
+                } label: {
+                    Image(systemName: "chart.bar.xaxis")
+                }
+                .help("Statistics (⌘I)")
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                }
+                .help("Settings")
+                Button {
+                    showingHelp.toggle()
+                } label: {
+                    Image(systemName: "questionmark")
+                }
+                .buttonBorderShape(.circle)
+                .help("About letter and word gaps")
+                .popover(isPresented: $showingHelp, arrowEdge: .bottom) {
+                    HelpView()
+                        .frame(width: 440, height: 480)
+                }
             }
-            Section("Sidetone") {
-                LabeledSlider(title: "Pitch", value: $model.frequency, range: 300...1200, step: 10) {
-                    "\(Int($0)) Hz"
-                }
-                LabeledSlider(title: "Volume", value: $model.volume, range: 0...1, step: 0.01) {
-                    "\(Int(($0 * 100).rounded())) %"
-                }
-            }
-            Section("Keyer") {
-                LabeledSlider(title: "Speed", value: $model.wpm, range: 5...60, step: 1) {
-                    "\(Int($0)) WPM"
-                }
-                Picker("Mode", selection: $model.mode) {
-                    ForEach(KeyerMode.allCases) { Text($0.label).tag($0) }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            extraHeight = max(0, height - Self.minimumSize.height)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Picker("Mode", selection: $model.sendingMode) {
+                    ForEach(SendingMode.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                Toggle("Reverse paddles", isOn: $model.reversePaddles)
-                Toggle("Autospace", isOn: $model.autospace)
-                    .help("After a pause, holds the next character back until a full letter gap has passed, so your characters come out properly spaced.")
-                    .disabled(model.mode == .straight)
+                .fixedSize()
+                .help("Free: just hear your key. Practice: send targets and see how you did.")
             }
         }
-        .formStyle(.grouped)
         .alert("Audio", isPresented: Binding(get: { model.audioError != nil }, set: { if !$0 { model.audioError = nil } })) {
             Button("OK") {}
         } message: {
             Text(model.audioError ?? "")
         }
     }
+
+    @ViewBuilder private var practiceSections: some View {
+        @Bindable var model = model
+        Section {
+            PracticeView()
+        } header: {
+            HStack {
+                Text("Send this")
+                Spacer()
+                Picker("Practise", selection: $model.practiceSource) {
+                    ForEach(PracticeSource.allCases) { Text($0.label).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                Button {
+                    model.restartAttempt()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .keyboardShortcut(.cancelAction)
+                .help("Start this one again (Esc, or send the error signal: eight dits)")
+                Button("Next") { model.nextTarget() }
+                    .help("Skip to a new target")
+            }
+        }
+        timingSection
+        Section {
+            CopyView(height: 54 + extraHeight, placeholder: "Everything you send is copied here.")
+        } header: {
+            copyHeader
+        }
+    }
+
+    private var timingSection: some View {
+        Section {
+            TimingStripView()
+                .frame(height: 74)
+        } header: {
+            HStack {
+                Text("Timing")
+                Spacer()
+                // In free sending, show the paddles too: handy for checking the paddle is wired
+                // the right way round. In practice the target and strip show your keying.
+                if model.sendingMode == .free { KeyLights() }
+            }
+        }
+    }
+
+    private var copyHeader: some View {
+        HStack {
+            Text("Copy")
+            Spacer()
+            Button("Clear") { model.clearCopy() }
+                .buttonStyle(.borderless)
+        }
+    }
 }
 
-/// The key lamp and the two paddle lights.
-private struct KeyPanel: View {
+/// The two paddle lights either side of the key lamp, small.
+private struct KeyLights: View {
     @Environment(OscillatorModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 8) {
             PaddleLight(label: "DIT", on: model.ditPressed)
             Circle()
                 .fill(model.keyDown ? Color.orange : Color.secondary.opacity(0.2))
                 .overlay(Circle().strokeBorder(.secondary.opacity(0.4), lineWidth: 1))
-                .frame(width: 64, height: 64)
-                .shadow(color: model.keyDown ? .orange.opacity(0.7) : .clear, radius: 12)
+                .frame(width: 18, height: 18)
+                .shadow(color: model.keyDown ? .orange.opacity(0.7) : .clear, radius: 6)
                 .accessibilityLabel(model.keyDown ? "Key down" : "Key up")
             PaddleLight(label: "DAH", on: model.dahPressed)
         }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -78,70 +164,32 @@ private struct PaddleLight: View {
 
     var body: some View {
         Text(label)
-            .font(.system(.headline, design: .monospaced))
-            .frame(width: 64, height: 32)
-            .background(on ? Color.accentColor : Color.secondary.opacity(0.15), in: .rect(cornerRadius: 6))
+            .font(.system(.caption, design: .monospaced).weight(.semibold))
+            .frame(width: 36, height: 18)
+            .background(on ? Color.accentColor : Color.secondary.opacity(0.15), in: .rect(cornerRadius: 5))
             .foregroundStyle(on ? Color.white : Color.secondary)
-    }
-}
-
-/// The last gap between two characters, in units, against the 3-unit letter gap and
-/// 7-unit word gap.
-private struct GapReadout: View {
-    let gap: CharacterGap?
-
-    var body: some View {
-        LabeledContent("Last gap") {
-            if let gap {
-                HStack(spacing: 8) {
-                    Text("\(gap.before) → \(gap.after)")
-                        .font(.system(.body, design: .monospaced))
-                    Text(String(format: "%.1f units", gap.units))
-                        .monospacedDigit()
-                    Text(label(gap.kind))
-                        .foregroundStyle(colour(gap.kind))
-                }
-            } else {
-                Text("letter gap 3 units, word gap 7")
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func label(_ kind: CharacterGap.Kind) -> String {
-        switch kind {
-        case .letter: "letter gap"
-        case .longLetter: "long letter gap"
-        case .word: "word space"
-        }
-    }
-
-    private func colour(_ kind: CharacterGap.Kind) -> Color {
-        switch kind {
-        case .letter: .green
-        case .longLetter: .orange
-        case .word: .secondary
-        }
     }
 }
 
 private struct CopyView: View {
     @Environment(OscillatorModel.self) private var model
+    let height: CGFloat
+    let placeholder: String
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 Text(model.copiedText)
-                .font(.system(.title3, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .id("end")
+                    .font(.system(.title3, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id("end")
             }
-            .frame(minHeight: 70, maxHeight: 140)
+            .frame(height: height)
             .onChange(of: model.copiedText) { proxy.scrollTo("end", anchor: .bottom) }
             .overlay {
                 if model.copiedText.isEmpty && model.pendingCode.isEmpty {
-                    Text("Send with the paddle; what you send appears here.")
+                    Text(placeholder)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -149,7 +197,7 @@ private struct CopyView: View {
     }
 }
 
-private struct LabeledSlider: View {
+struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>

@@ -1,4 +1,4 @@
-# CW Oscillator
+# CW Training Oscillator
 
 Mac practice oscillator for a paddle on a VBand USB adapter (Left Control = dit, Right Control = dah). See README.md for features.
 

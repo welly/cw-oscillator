@@ -11,7 +11,7 @@ public enum Element: Sendable, Equatable {
 public enum MorseCode {
     /// Prosigns, shown with an overline (A̅R̅).
     public static let prosigns: [String: String] = [
-        "AR": ".-.-.", "SK": "...-.-", "BT": "-...-", "KN": "-.--.", "AS": ".-...",
+        "AR": ".-.-.", "SK": "...-.-", "BT": "-...-", "KN": "-.--.", "AS": ".-...", "BK": "-...-.-",
     ]
 
     public static let characters: [Character: String] = [
@@ -42,6 +42,23 @@ public enum MorseCode {
         text.map { "\($0)\u{0305}" }.joined()
     }
 
-    /// The text for a code, or nil when it isn't in the table.
-    public static func decode(_ code: String) -> String? { decodeTable[code] }
+    /// What the error signal (six or more dits, usually eight) copies as.
+    public static let errorSignal = "⌫"
+
+    /// True for the error signal: six or more dits at the end of a character. That includes
+    /// dits sent straight on from a fumbled character without a letter gap (`--.` then eight
+    /// dits reads as one long character). No real character ends in more than five dits.
+    public static func isErrorSignal(_ code: String) -> Bool {
+        trailingDits(code) >= 6
+    }
+
+    /// How many dits a code ends with: 3 for `-...`.
+    public static func trailingDits(_ code: String) -> Int {
+        code.reversed().prefix { $0 == "." }.count
+    }
+
+    /// The text for a code (the error signal included), or nil when it isn't in the table.
+    public static func decode(_ code: String) -> String? {
+        isErrorSignal(code) ? errorSignal : decodeTable[code]
+    }
 }
