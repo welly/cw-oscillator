@@ -1,13 +1,25 @@
+#if os(macOS)
 import AppKit
 
 /// Reads the paddle from a VBand USB adapter, which shows up as a keyboard: the dit paddle is
 /// Left Control and the dah paddle is Right Control. `[` and `]` work too (handy without a
 /// paddle), except while a text field is being typed in.
 ///
-/// Uses a local event monitor, so it only hears the paddle while the app is in front.
+/// Uses a local event monitor, so it only hears the paddle while the app is in front. With
+/// `background` on, the adapter is also read straight from USB (`HIDPaddle`), which works
+/// whichever app is in front.
 @MainActor
 final class PaddleInput {
     var onChange: ((_ dit: Bool, _ dah: Bool) -> Void)?
+
+    /// Read the adapter from USB too, so it works with the app in the background.
+    var background = false {
+        didSet {
+            guard background != oldValue else { return }
+            if background { hid.start() } else { hid.stop() }
+        }
+    }
+    let hid = HIDPaddle()
 
     private var monitor: Any?
     private var leftControl = false
@@ -23,6 +35,7 @@ final class PaddleInput {
 
     func start() {
         guard monitor == nil else { return }
+        hid.onChange = { [weak self] _, _ in self?.notify() }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown, .keyUp]) { [weak self] event in
             guard let self else { return event }
             return self.handle(event) ? nil : event
@@ -32,9 +45,12 @@ final class PaddleInput {
     func stop() {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        hid.stop()
         releaseAll()
     }
 
+    /// Lets go of the keys heard through the app (the USB reading keeps its own state, which
+    /// stays right in the background).
     func releaseAll() {
         leftControl = false
         rightControl = false
@@ -70,6 +86,7 @@ final class PaddleInput {
     }
 
     private func notify() {
-        onChange?(leftControl || leftBracket, rightControl || rightBracket)
+        onChange?(leftControl || leftBracket || hid.dit, rightControl || rightBracket || hid.dah)
     }
 }
+#endif

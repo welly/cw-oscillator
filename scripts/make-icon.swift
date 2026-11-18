@@ -1,5 +1,6 @@
 // Renders the CW Training Oscillator app icon: "CW" in Morse (C = dah dit dah dit, W = dit dah dah)
-// as glowing marks on a dark teal tile. Writes Resources/AppIcon.icns.
+// as glowing marks on a dark teal tile. Writes Resources/AppIcon.icns (macOS) and
+// iOS/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png (iOS: 1024 px, full bleed).
 // Usage: swift scripts/make-icon.swift              (from the repository root)
 //        swift scripts/make-icon.swift preview.png  (also writes a 1024 px preview)
 import AppKit
@@ -10,12 +11,21 @@ private let bottom = Color(red: 0.04, green: 0.16, blue: 0.20)
 private let glow = Color(red: 1.00, green: 0.62, blue: 0.18)
 
 struct AppIcon: View {
+    /// iOS: a full-bleed square (iOS applies its own corner mask). Otherwise Apple's macOS grid,
+    /// an 824 pt rounded square with a shadow on a 1024 pt canvas.
+    var fullBleed = false
+
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 185, style: .continuous)
-                .fill(LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom))
-                .frame(width: 824, height: 824)
-                .shadow(color: .black.opacity(0.3), radius: 16, y: 10)
+            if fullBleed {
+                Rectangle()
+                    .fill(LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom))
+            } else {
+                RoundedRectangle(cornerRadius: 185, style: .continuous)
+                    .fill(LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom))
+                    .frame(width: 824, height: 824)
+                    .shadow(color: .black.opacity(0.3), radius: 16, y: 10)
+            }
             Circle()
                 .fill(RadialGradient(colors: [glow.opacity(0.55), .clear], center: .center,
                                      startRadius: 0, endRadius: 300))
@@ -48,8 +58,8 @@ struct MorseRow: View {
 }
 
 @MainActor
-func renderPNG(size: Int) -> Data {
-    let content = AppIcon()
+func renderPNG(size: Int, fullBleed: Bool = false) -> Data {
+    let content = AppIcon(fullBleed: fullBleed)
         .scaleEffect(CGFloat(size) / 1024)
         .frame(width: CGFloat(size), height: CGFloat(size))
     let renderer = ImageRenderer(content: content)
@@ -79,6 +89,11 @@ func main() throws {
     task.waitUntilExit()
     guard task.terminationStatus == 0 else { fatalError("iconutil failed") }
     print("Wrote \(icns.path)")
+
+    let iosIcon = root.appendingPathComponent("iOS/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png")
+    try fm.createDirectory(at: iosIcon.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try renderPNG(size: 1024, fullBleed: true).write(to: iosIcon)
+    print("Wrote \(iosIcon.path)")
 
     if CommandLine.arguments.count > 1 {
         let preview = URL(fileURLWithPath: CommandLine.arguments[1])

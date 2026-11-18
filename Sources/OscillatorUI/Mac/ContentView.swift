@@ -1,7 +1,9 @@
+#if os(macOS)
 import OscillatorCore
 import SwiftUI
 
-struct ContentView: View {
+/// The Mac app's main window.
+public struct ContentView: View {
     @Environment(OscillatorModel.self) private var model
     @State private var showingHelp = false
     @Environment(\.openWindow) private var openWindow
@@ -9,9 +11,11 @@ struct ContentView: View {
     @State private var extraHeight: CGFloat = 0
 
     /// The smallest size the layout fits; the window starts at this size.
-    static let minimumSize = CGSize(width: 560, height: 500)
+    public static let minimumSize = CGSize(width: 560, height: 500)
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         @Bindable var model = model
         VStack(spacing: 0) {
             Form {
@@ -196,23 +200,4 @@ private struct CopyView: View {
         }
     }
 }
-
-struct LabeledSlider: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-    let step: Double
-    let format: (Double) -> String
-
-    var body: some View {
-        LabeledContent(title) {
-            HStack {
-                // No `step:` on the slider itself: macOS would draw a tick mark for every step.
-                Slider(value: Binding(get: { value }, set: { value = ($0 / step).rounded() * step }), in: range)
-                Text(format(value))
-                    .monospacedDigit()
-                    .frame(width: 70, alignment: .trailing)
-            }
-        }
-    }
-}
+#endif

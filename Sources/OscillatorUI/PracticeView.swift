@@ -10,9 +10,9 @@ struct PracticeView: View {
         if model.target.isEmpty {
             VStack(spacing: 8) {
                 Text("Set your callsign to practise it.")
-                SettingsLink { Text("Open Settings…") }
+                    .foregroundStyle(.secondary)
+                OpenSettingsButton()
             }
-            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 80)
         } else {
             practice
@@ -21,8 +21,14 @@ struct PracticeView: View {
 
     private var practice: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TargetLine(target: model.target, characters: characterStatuses, gaps: gapStatuses,
-                       gapUnits: gapUnits, next: model.result == nil ? model.attemptSent.count : nil)
+            // Long QSO phrases step down in size to fit (on an iPhone especially).
+            ViewThatFits(in: .horizontal) {
+                ForEach([28.0, 22, 18, 15], id: \.self) { size in
+                    TargetLine(target: model.target, characters: characterStatuses, gaps: gapStatuses,
+                               gapUnits: gapUnits, next: model.result == nil ? model.attemptSent.count : nil,
+                               fontSize: size)
+                }
+            }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .frame(minHeight: 44)
             summary
@@ -116,16 +122,17 @@ private struct TargetLine: View {
     let gapUnits: [Double?]
     /// The character to send next (underlined), while an attempt is under way.
     let next: Int?
+    var fontSize: CGFloat = 28
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             ForEach(Array(target.tokens.enumerated()), id: \.offset) { k, token in
                 if k > 0 {
-                    GapMark(startsWord: token.startsWord, status: gaps[k], units: gapUnits[k])
+                    GapMark(startsWord: token.startsWord, status: gaps[k], units: gapUnits[k], scale: fontSize / 28)
                 }
                 VStack(spacing: 3) {
                     Text(token.text)
-                        .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                        .font(.system(size: fontSize, weight: .semibold, design: .monospaced))
                         .foregroundStyle(colour(characters[k]))
                     Rectangle()
                         .fill(k == next ? Color.accentColor : .clear)
@@ -162,6 +169,7 @@ private struct GapMark: View {
     let startsWord: Bool
     let status: AttemptResult.GapStatus?
     let units: Double?
+    var scale: CGFloat = 1
 
     var body: some View {
         VStack(spacing: 3) {
@@ -172,7 +180,7 @@ private struct GapMark: View {
                 .padding(.horizontal, 2)
                 .padding(.bottom, 2)
         }
-        .frame(width: startsWord ? 24 : 10)
+        .frame(width: (startsWord ? 24 : 10) * scale)
         .help(units.map { String(format: "%.1f units", $0) } ?? "")
     }
 
@@ -183,5 +191,18 @@ private struct GapMark: View {
         case .long: .orange
         case .unwantedSpace, .missingSpace: .red
         }
+    }
+}
+
+/// Opens Settings: the Settings window on the Mac, the Settings sheet on iOS.
+struct OpenSettingsButton: View {
+    @Environment(OscillatorModel.self) private var model
+
+    var body: some View {
+        #if os(macOS)
+        SettingsLink { Text("Open Settings…") }
+        #else
+        Button("Open Settings") { model.showingSettings = true }
+        #endif
     }
 }

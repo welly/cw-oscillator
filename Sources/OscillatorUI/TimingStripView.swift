@@ -11,8 +11,8 @@ import SwiftUI
 struct TimingStripView: View {
     @Environment(OscillatorModel.self) private var model
 
-    /// How many units of time the strip shows.
-    private static let visibleUnits = 72.0
+    /// How many units of time the strip shows (fewer on a narrow iPhone, so dits stay visible).
+    var visibleUnits = 72.0
 
     var body: some View {
         let strip = model.strip
@@ -27,7 +27,7 @@ struct TimingStripView: View {
         let pending = strip.pending
 
         Canvas { context, size in
-            let perUnit = size.width / Self.visibleUnits
+            let perUnit = size.width / visibleUnits
             func x(_ sample: Int) -> CGFloat {
                 size.width - CGFloat(Double(clock - sample) / scaleSamples) * perUnit
             }

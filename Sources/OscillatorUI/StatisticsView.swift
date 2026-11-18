@@ -3,10 +3,12 @@ import OscillatorCore
 import SwiftUI
 
 /// The Statistics window: how this session is going.
-struct StatisticsView: View {
+public struct StatisticsView: View {
     @Environment(OscillatorModel.self) private var model
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         let stats = model.stats
         Form {
             Section {

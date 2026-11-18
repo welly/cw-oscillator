@@ -44,23 +44,39 @@ public final class OscillatorEngine: @unchecked Sendable {
     private let shared: OSAllocatedUnfairLock<Shared>
     private let engine = AVAudioEngine()
     private var source: AVAudioSourceNode?
-    private var configObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
     public private(set) var sampleRate: Double = 48_000
 
     public init() {
         var initial = Shared()
         initial.marks.reserveCapacity(256)
         shared = OSAllocatedUnfairLock(initialState: initial)
-        configObserver = NotificationCenter.default.addObserver(
+        let centre = NotificationCenter.default
+        observers.append(centre.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
             // The output device or its sample rate changed: rebuild the graph.
             try? self?.start()
-        }
+        })
+        #if os(iOS)
+        // After a phone call or Siri, start again.
+        observers.append(centre.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init)
+            if type == .ended { self?.restartIfStopped() }
+        })
+        observers.append(centre.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            try? self?.start()
+        })
+        #endif
     }
 
     deinit {
-        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        for observer in observers { NotificationCenter.default.removeObserver(observer) }
         engine.stop()
     }
 
@@ -134,6 +150,11 @@ public final class OscillatorEngine: @unchecked Sendable {
     }
 
     public func stop() { engine.stop() }
+
+    /// Starts the audio again if something (an interruption) stopped it.
+    public func restartIfStopped() {
+        if !engine.isRunning { try? start() }
+    }
 
     public func setPaddles(dit: Bool, dah: Bool) {
         shared.withLock {

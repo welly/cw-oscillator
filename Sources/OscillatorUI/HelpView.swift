@@ -1,12 +1,17 @@
 import OscillatorCore
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Explains units, letter gaps and word gaps, and how the app judges them. Shown from the ?
 /// button and Help ▸ CW Training Oscillator Help.
-struct HelpView: View {
+public struct HelpView: View {
     @Environment(OscillatorModel.self) private var model
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 topic("Units") {
@@ -44,17 +49,25 @@ struct HelpView: View {
                     Text("While you pause, the gap grows live as a dashed line, with ticks at 3 (letter gap) and 7 (word gap) to aim for.")
                 }
                 topic("Free and Practice") {
-                    Text("The switch at the top of the window. Free is a plain practice oscillator: send anything, hear it, and see it copied with the timing strip. Practice gives you targets to send and judges them.")
+                    Text("The switch at the top of the \(Platform.isMac ? "window" : "screen"). Free is a plain practice oscillator: send anything, hear it, and see it copied with the timing strip. Practice gives you targets to send and judges them.")
                 }
                 topic("Send this") {
                     Text("Send the target with the paddle. Characters turn green or red as you go, and the bar under each gap shows how the spacing went: green right, orange long, red an unwanted space inside a word or a missing one between words.")
                     Text("An attempt ends when you pause for a word gap after sending it, so a stray extra character at the end counts as a mistake in that attempt rather than starting the next one. If you stop short, it ends after a longer pause.")
-                    Text("Fumbled it? Send the error signal (eight dits) or press Esc, and the attempt starts again. Six or more dits will do. It still works if you go straight into them from the character you fumbled, or if they break up into letters like S S I or H I E, as long as you don't pause for a word gap. A run of dits that the target actually asks for, like HIS or SHE, isn't treated as an error.")
+                    Text("Fumbled it? Send the error signal (eight dits) or \(Platform.isMac ? "press Esc" : "tap ↺"), and the attempt starts again. Six or more dits will do. It still works if you go straight into them from the character you fumbled, or if they break up into letters like S S I or H I E, as long as you don't pause for a word gap. A run of dits that the target actually asks for, like HIS or SHE, isn't treated as an error.")
                     Text("Get it right (long letter gaps are allowed) and a new one appears. Otherwise send it again. Choose your callsign, random callsigns, words or QSO phrases from the menu; Next skips.")
                 }
                 topic("Statistics") {
-                    Text("The chart button (⌘I) shows how the session is going: how many attempts were right, your average letter and word gaps and how consistent they are, the characters you miss most, and your speed.")
+                    Text("The chart button\(Platform.isMac ? " (⌘I)" : "") shows how the session is going: how many attempts were right, your average letter and word gaps and how consistent they are, the characters you miss most, and your speed.")
                     Text("Sending speed is what your sending works out at once your spacing is counted, averaged over your last five attempts at the current speed settings (change speed and it starts afresh). The keyer times the characters, so it's your gaps that bring it below the keyer speed. Aim for the keyer speed, or the effective speed if you use Farnsworth.")
+                }
+                if !Platform.isMac {
+                    topic("Paddle") {
+                        Text("Plug a VBand USB adapter into the \(Platform.deviceName) (through a USB-C or Lightning adapter if needed): the dit paddle is Left Control and the dah paddle is Right Control. Any keyboard's [ and ] keys do the same.")
+                        Text("Without a paddle, use the dit and dah pads at the bottom of the screen (turn them off in Settings). Touch timing is a little looser than a real paddle.")
+                        Text("Use wired headphones or the speaker: Bluetooth adds a lag that makes sending awkward.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 topic("Tips") {
                     Text("Without Farnsworth, think of a letter gap as one silent dah, and a word gap as just over two. Common trouble spots are switching between letters and figures (G3) and the same paddle ending one character and starting the next (S then E).")
@@ -105,4 +118,14 @@ private struct Swatch: View {
             Text(text)
         }
     }
+}
+
+enum Platform {
+    #if os(macOS)
+    static let isMac = true
+    static let deviceName = "Mac"
+    #else
+    static let isMac = false
+    @MainActor static var deviceName: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
+    #endif
 }

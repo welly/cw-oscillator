@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Observation
 import OscillatorAudio
 import OscillatorCore
@@ -38,7 +42,7 @@ enum SendingMode: String, CaseIterable, Identifiable {
 /// The app's settings and live state. Settings are kept in UserDefaults.
 @MainActor
 @Observable
-final class OscillatorModel {
+public final class OscillatorModel {
     // MARK: Settings
 
     var frequency: Double { didSet { save() } }
@@ -49,6 +53,19 @@ final class OscillatorModel {
     var mode: KeyerMode { didSet { save() } }
     var reversePaddles: Bool { didSet { save() } }
     var autospace: Bool { didSet { save() } }
+    /// iOS: dit and dah pads on the screen, for when no paddle is plugged in.
+    var showTouchPaddles: Bool { didSet { save() } }
+    /// Mac: keep hearing the paddle when another app is in front.
+    public var backgroundKeying: Bool {
+        didSet {
+            save()
+            applyBackgroundKeying()
+        }
+    }
+    /// Mac: whether Input Monitoring is allowed, for Settings to explain if it isn't.
+    private(set) var backgroundAccessDenied = false
+    /// Mac: the adapter is opened exclusively, so its Control presses don't reach other apps.
+    private(set) var backgroundExclusive = false
     var myCallsign: String {
         didSet {
             // Only callsign characters, so the target is always something sendable.
@@ -83,6 +100,8 @@ final class OscillatorModel {
     private(set) var copiedText = ""
     private(set) var pendingCode = ""
     var audioError: String?
+    /// iOS: the Settings sheet is showing (the Mac uses its Settings window instead).
+    var showingSettings = false
     let strip = TimingStripState()
 
     // MARK: Practice
@@ -121,6 +140,12 @@ final class OscillatorModel {
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var keyDownSince: Int?
+    /// The paddle as each input has it: the keyboard (a VBand adapter) and, on iOS, the
+    /// on-screen pads. Either can key.
+    private var keyboardPaddles = (dit: false, dah: false)
+    private var touchPaddles = (dit: false, dah: false)
+    /// Mac: holds off App Nap while background keying is on.
+    private var activity: NSObjectProtocol?
 
     /// An attempt that stops short ends after this much silence (20 units, or 12 spacing
     /// units with Farnsworth if that's longer).
@@ -128,11 +153,11 @@ final class OscillatorModel {
     /// How much history the timing strip keeps.
     private static let stripHistoryUnits = 200.0
 
-    init() {
+    public init() {
         defaults.register(defaults: [
             "frequency": 600.0, "volume": 0.5, "wpm": 20.0, "farnsworth": false, "effectiveWPM": 10.0,
             "mode": KeyerMode.iambicB.rawValue, "reversePaddles": false,
-            "autospace": false, "myCallsign": "",
+            "autospace": false, "showTouchPaddles": true, "backgroundKeying": false, "myCallsign": "",
             "practiceSource": PracticeSource.myCallsign.rawValue, "sendingMode": SendingMode.practice.rawValue,
         ])
         frequency = defaults.double(forKey: "frequency")
@@ -143,6 +168,8 @@ final class OscillatorModel {
         mode = KeyerMode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .iambicB
         reversePaddles = defaults.bool(forKey: "reversePaddles")
         autospace = defaults.bool(forKey: "autospace")
+        showTouchPaddles = defaults.bool(forKey: "showTouchPaddles")
+        backgroundKeying = defaults.bool(forKey: "backgroundKeying")
         myCallsign = Self.cleanCallsign(defaults.string(forKey: "myCallsign") ?? "")
         practiceSource = PracticeSource(rawValue: defaults.string(forKey: "practiceSource") ?? "") ?? .myCallsign
         sendingMode = SendingMode(rawValue: defaults.string(forKey: "sendingMode") ?? "") ?? .practice
@@ -150,7 +177,8 @@ final class OscillatorModel {
         target = PracticeGenerator(myCallsign: myCallsign).next(practiceSource)
     }
 
-    func start() {
+    public func start() {
+        guard timer == nil else { return }
         pushSettings()
         do {
             try engine.start()
@@ -159,15 +187,38 @@ final class OscillatorModel {
         }
         decoder = Decoder(sampleRate: engine.sampleRate, timing: timing)
 
-        paddles.onChange = { [weak self] dit, dah in self?.setPaddles(dit: dit, dah: dah) }
+        paddles.onChange = { [weak self] dit, dah in
+            self?.keyboardPaddles = (dit, dah)
+            self?.applyPaddles()
+        }
         paddles.start()
+        applyBackgroundKeying()
 
         // Losing focus means key-up events go elsewhere: let go rather than key forever.
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
+        #if os(macOS)
+        let resign = NSApplication.didResignActiveNotification
+        #else
+        let resign = UIApplication.willResignActiveNotification
+        #endif
+        observers.append(NotificationCenter.default.addObserver(forName: resign, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.releaseAll() }
         })
+        #if os(macOS)
+        // Coming back after allowing Input Monitoring in System Settings: try again.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyBackgroundKeying() }
+        })
+        #endif
+        #if os(iOS)
+        // A phone call or another app can stop the audio; start it again on the way back.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.engine.restartIfStopped() }
+        })
+        #endif
 
         let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -218,7 +269,15 @@ final class OscillatorModel {
         restarted = true
     }
 
-    private func setPaddles(dit: Bool, dah: Bool) {
+    /// The on-screen pads (iOS).
+    func setTouchPaddles(dit: Bool, dah: Bool) {
+        touchPaddles = (dit, dah)
+        applyPaddles()
+    }
+
+    private func applyPaddles() {
+        let dit = keyboardPaddles.dit || touchPaddles.dit
+        let dah = keyboardPaddles.dah || touchPaddles.dah
         let (d, a) = reversePaddles ? (dah, dit) : (dit, dah)
         ditPressed = d
         dahPressed = a
@@ -226,8 +285,42 @@ final class OscillatorModel {
     }
 
     private func releaseAll() {
+        touchPaddles = (false, false)
         paddles.releaseAll()
+        #if os(macOS)
+        // Reading the adapter from USB, it still knows what's held: keep keying.
+        if paddles.hid.isRunning { return }
+        #endif
         engine.releaseAll()
+    }
+
+    /// Mac: starts or stops reading the adapter from USB, and stops App Nap slowing the
+    /// decoder and display down while the app is in the background.
+    private func applyBackgroundKeying() {
+        #if os(macOS)
+        guard timer != nil else { return } // not started yet
+        var on = backgroundKeying
+        if on {
+            switch HIDPaddle.access {
+            case .granted: break
+            case .unknown: on = HIDPaddle.requestAccess()
+            case .denied: on = false
+            }
+        }
+        backgroundAccessDenied = backgroundKeying && !on
+        if on != paddles.background {
+            paddles.background = on
+            if on {
+                activity = ProcessInfo.processInfo.beginActivity(
+                    options: [.userInitiated, .latencyCritical],
+                    reason: "Keying the sidetone from the paddle")
+            } else if let activity {
+                ProcessInfo.processInfo.endActivity(activity)
+                self.activity = nil
+            }
+        }
+        backgroundExclusive = on && paddles.hid.exclusive
+        #endif
     }
 
     private func tick() {
@@ -337,6 +430,8 @@ final class OscillatorModel {
         defaults.set(mode.rawValue, forKey: "mode")
         defaults.set(reversePaddles, forKey: "reversePaddles")
         defaults.set(autospace, forKey: "autospace")
+        defaults.set(showTouchPaddles, forKey: "showTouchPaddles")
+        defaults.set(backgroundKeying, forKey: "backgroundKeying")
         defaults.set(myCallsign, forKey: "myCallsign")
         defaults.set(practiceSource.rawValue, forKey: "practiceSource")
         defaults.set(sendingMode.rawValue, forKey: "sendingMode")

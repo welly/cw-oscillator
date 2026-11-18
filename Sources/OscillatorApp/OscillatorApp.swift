@@ -1,4 +1,5 @@
 import AppKit
+import OscillatorUI
 import SwiftUI
 
 @main
@@ -41,6 +42,17 @@ struct OscillatorApp: App {
             SettingsView()
                 .environment(model)
         }
+
+        // While background keying is on: shows the app is running (and lights as you key),
+        // and keeps it running with the window closed.
+        MenuBarExtra(isInserted: Binding(get: { model.backgroundKeying },
+                                         set: { if !$0 { model.backgroundKeying = false } })) {
+            MenuBarMenu()
+                .environment(model)
+        } label: {
+            MenuBarIcon()
+                .environment(model)
+        }
     }
 }
 
@@ -63,5 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// Quits when the window closes, unless background keying is on: then it carries on in the
+    /// menu bar.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !UserDefaults.standard.bool(forKey: "backgroundKeying")
+    }
 }
