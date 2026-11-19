@@ -44,9 +44,10 @@ struct OscillatorApp: App {
         }
 
         // While background keying is on: shows the app is running (and lights as you key),
-        // and keeps it running with the window closed.
-        MenuBarExtra(isInserted: Binding(get: { model.backgroundKeying },
-                                         set: { if !$0 { model.backgroundKeying = false } })) {
+        // and keeps it running with the window closed. Read-only: macOS writes false here when
+        // the icon is hidden (dragged out, or turned off in the menu bar settings), and that
+        // mustn't switch background keying off.
+        MenuBarExtra(isInserted: Binding(get: { model.backgroundKeying }, set: { _ in })) {
             MenuBarMenu()
                 .environment(model)
         } label: {
